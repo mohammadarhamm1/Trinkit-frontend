@@ -1,0 +1,113 @@
+body {
+  margin: 0;
+  font-family: sans-serif;
+  background: #f7f7f7;
+}
+
+.app {
+  padding: 20px;
+}
+
+/* Navbar */
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.green {
+  color: #22c55e;
+}
+
+.cartIcon {
+  position: relative;
+  cursor: pointer;
+}
+
+.cartIcon span {
+  position: absolute;
+  top: -8px;
+  right: -10px;
+  background: #22c55e;
+  color: white;
+  padding: 3px 7px;
+  border-radius: 50%;
+  font-size: 12px;
+}
+
+/* Search */
+.search {
+  width: 100%;
+  padding: 12px;
+  margin: 15px 0;
+  border-radius: 10px;
+  border: none;
+}
+
+/* Categories */
+.categories {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.categories div {
+  padding: 10px;
+  background: white;
+  border-radius: 10px;
+}
+
+/* Grid */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 15px;
+}
+
+/* Card */
+.card {
+  background: white;
+  padding: 10px;
+  border-radius: 15px;
+  transition: 0.3s;
+}
+
+.card:hover {
+  transform: scale(1.03);
+}
+
+.card img {
+  width: 100%;
+  border-radius: 10px;
+}
+
+.bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.addBtn {
+  background: #22c55e;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 8px;
+}
+
+/* Counter */
+.counter {
+  display: flex;
+  gap: 5px;
+}
+
+.counter button {
+  padding: 5px 10px;
+}
+
+/* Login */
+.login {
+  background: white;
+  padding: 30px;
+  border-radius: 20px;
+}
