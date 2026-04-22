@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // ─── CONFIG ────────────────────────────────────────────────────────────────
-const API = "https://trinkit.onrender.com/api"; // ← change to Railway URL after deploy
-const BASE = "https://trinkit.onrender.com";    // ← same base for images
+// ← Replace with your actual Render backend URL
+const API = "https://trinkit.onrender.com"/api";
+const BASE = "https://trinkit.onrender.com";
 
-const UPI_ID = "9258154802@axl";
+const UPI_ID = "9149170611@ptsbis";
 const UPI_NAME = "Trinkit Store";
 
 const apiFetch = async (path, options = {}, token = null) => {
@@ -87,12 +88,13 @@ const EmptyState = ({icon,text,btnText,onBtn}) => (
 
 // ─── LOCATION PICKER MODAL ─────────────────────────────────────────────────
 function LocationModal({ onSave, onClose, currentLocation }) {
-  const [step, setStep] = useState("options"); // options | map | manual | confirming
+  const [step, setStep] = useState("options");
   const [locating, setLocating] = useState(false);
   const [coords, setCoords] = useState(currentLocation?.coords || null);
   const [address, setAddress] = useState(currentLocation?.address || "");
   const [flatNo, setFlatNo] = useState(currentLocation?.flatNo || "");
   const [landmark, setLandmark] = useState(currentLocation?.landmark || "");
+  const [pincode, setPincode] = useState(currentLocation?.pincode || "");
   const [locType, setLocType] = useState(currentLocation?.type || "Home");
   const [error, setError] = useState("");
   const mapRef = useRef();
@@ -185,7 +187,7 @@ function LocationModal({ onSave, onClose, currentLocation }) {
 
   const handleSave = () => {
     if (!address) { setError("Please set a delivery location first."); return; }
-    onSave({ address, flatNo, landmark, type: locType, coords });
+    onSave({ address, flatNo, landmark, pincode, type: locType, coords });
   };
 
   return (
@@ -305,6 +307,10 @@ function LocationModal({ onSave, onClose, currentLocation }) {
             <div style={s.formGroup}>
               <label style={s.formLabel}>Landmark (optional)</label>
               <input style={s.formInput} placeholder="e.g. Near Ram Mandir" value={landmark} onChange={e=>setLandmark(e.target.value)}/>
+            </div>
+            <div style={s.formGroup}>
+              <label style={s.formLabel}>Pin Code</label>
+              <input style={s.formInput} placeholder="e.g. 250001" type="number" value={pincode} onChange={e=>setPincode(e.target.value)}/>
             </div>
             {/* Save as */}
             <div style={s.formGroup}>
@@ -640,14 +646,114 @@ function OrdersView({ orders, token, loading, setView }) {
   );
 }
 
+// ─── RIDER MAP MODAL ──────────────────────────────────────────────────────
+function RiderMapModal({ order, onClose }) {
+  const mapRef = useRef();
+  const mapInstanceRef = useRef();
+  const coords = order?.deliveryAddress?.coords;
+  const address = order?.deliveryAddress?.address || "";
+  const flatNo = order?.deliveryAddress?.flatNo || "";
+  const phone = order?.deliveryAddress?.phone || "";
+
+  useEffect(() => {
+    const initMap = async () => {
+      if (!document.getElementById("leaflet-css")) {
+        const link = document.createElement("link");
+        link.id = "leaflet-css"; link.rel = "stylesheet";
+        link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+        document.head.appendChild(link);
+      }
+      if (!window.L) {
+        await new Promise((res, rej) => {
+          const script = document.createElement("script");
+          script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+          script.onload = res; script.onerror = rej;
+          document.body.appendChild(script);
+        });
+      }
+      const L = window.L;
+      const lat = coords?.lat || 28.9845;
+      const lng = coords?.lng || 77.7064;
+      if (mapInstanceRef.current) { mapInstanceRef.current.remove(); }
+      setTimeout(() => {
+        if (!mapRef.current) return;
+        const map = L.map(mapRef.current).setView([lat, lng], 17);
+        mapInstanceRef.current = map;
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: "© OpenStreetMap"
+        }).addTo(map);
+        // Customer pin
+        const icon = L.divIcon({
+          html: `<div style="background:#e53935;width:36px;height:36px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;"></div>`,
+          iconSize:[36,36], iconAnchor:[18,36], className:""
+        });
+        const marker = L.marker([lat, lng], {icon}).addTo(map);
+        marker.bindPopup(`<b>${flatNo ? flatNo+", " : ""}${address.split(",").slice(0,2).join(",")}</b><br>${phone}`).openPopup();
+      }, 150);
+    };
+    initMap();
+    return () => { if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; } };
+  }, []);
+
+  const openGoogleMaps = () => {
+    if (coords) {
+      window.open(`https://www.google.com/maps/dir/?api=1&destination=${coords.lat},${coords.lng}`, "_blank");
+    } else {
+      window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([flatNo, address].filter(Boolean).join(", "))}`, "_blank");
+    }
+  };
+
+  return (
+    <div style={{...s.overlay, alignItems:"stretch"}}>
+      <div style={{...s.modal, borderRadius:0, maxHeight:"100vh", height:"100vh", padding:0, display:"flex", flexDirection:"column"}}>
+        {/* Header */}
+        <div style={{padding:"14px 16px", background:"#fff", borderBottom:"1px solid #e4e0d8", display:"flex", alignItems:"center", gap:10}}>
+          <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer"}}>←</button>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:700,fontSize:15}}>Delivery Location</div>
+            <div style={{fontSize:12,color:"#6b6660"}}>{order.orderId} • {order.customer?.name}</div>
+          </div>
+          <button onClick={openGoogleMaps} style={{background:G,color:"#fff",border:"none",padding:"8px 14px",borderRadius:8,fontWeight:700,fontSize:12,cursor:"pointer"}}>
+            🗺 Navigate
+          </button>
+        </div>
+        {/* Map */}
+        <div style={{flex:1, position:"relative"}}>
+          {!coords && (
+            <div style={{position:"absolute",top:12,left:"50%",transform:"translateX(-50%)",background:"rgba(229,57,53,.9)",color:"#fff",padding:"8px 16px",borderRadius:20,fontSize:12,fontWeight:600,zIndex:500,textAlign:"center",whiteSpace:"nowrap"}}>
+              ⚠️ Customer did not pin location — showing approximate address
+            </div>
+          )}
+          <div ref={mapRef} style={{width:"100%",height:"100%",minHeight:350}}/>
+        </div>
+        {/* Address info */}
+        <div style={{background:"#fff", padding:"14px 16px", borderTop:"1px solid #e4e0d8"}}>
+          <div style={{display:"flex",gap:10,alignItems:"flex-start",marginBottom:10}}>
+            <span style={{fontSize:20}}>📍</span>
+            <div>
+              {flatNo && <div style={{fontWeight:700,fontSize:14}}>{flatNo}</div>}
+              <div style={{fontSize:13,color:"#444",lineHeight:1.5}}>{address}</div>
+              {order.deliveryAddress?.landmark && <div style={{fontSize:12,color:"#6b6660"}}>Near: {order.deliveryAddress.landmark}</div>}
+            </div>
+          </div>
+          <a href={`tel:${phone}`} style={{display:"flex",alignItems:"center",gap:8,background:GL,borderRadius:10,padding:"10px 14px",textDecoration:"none"}}>
+            <span style={{fontSize:20}}>📞</span>
+            <div>
+              <div style={{fontWeight:700,fontSize:13,color:G}}>Call Customer</div>
+              <div style={{fontSize:12,color:"#6b6660"}}>{phone}</div>
+            </div>
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [view, setView] = useState("home");
   const [adminMode, setAdminMode] = useState(false);
   const [adminTab, setAdminTab] = useState("orders");
-  const [cart, setCart] = useState(() => {
-  const savedCart = localStorage.getItem("cart");
-  return savedCart ? JSON.parse(savedCart) : {};
-});
+  const [cart, setCart] = useState({});
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [adminOrders, setAdminOrders] = useState([]);
@@ -655,7 +761,20 @@ export default function App() {
   const [cat, setCat] = useState("All");
   const [search, setSearch] = useState("");
   const [checkoutStep, setCheckoutStep] = useState("cart");
-  const [deliveryForm, setDeliveryForm] = useState({name:"",phone:"",address:"",pincode:"",note:""});
+  const [deliveryForm, setDeliveryForm] = useState(() => {
+    // Pre-fill from saved location if available
+    try {
+      const loc = JSON.parse(localStorage.getItem("tk_location"));
+      if (loc?.address) return {
+        name: JSON.parse(localStorage.getItem("tk_user"))?.name || "",
+        phone: JSON.parse(localStorage.getItem("tk_user"))?.phone || "",
+        address: [loc.flatNo, loc.address, loc.landmark].filter(Boolean).join(", "),
+        pincode: loc.pincode || "",
+        note: ""
+      };
+    } catch {}
+    return {name:"", phone:"", address:"", pincode:"", note:""};
+  });
   const [paymentMethod, setPaymentMethod] = useState("upi");
   const [showUpiModal, setShowUpiModal] = useState(false);
   const [showLocationModal, setShowLocationModal] = useState(false);
@@ -671,11 +790,8 @@ export default function App() {
   const [editingProduct, setEditingProduct] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [productSearch, setProductSearch] = useState("");
+  const [riderMapOrder, setRiderMapOrder] = useState(null);
   const toastRef = useRef();
-
-  useEffect(() => {
-  localStorage.setItem("cart", JSON.stringify(cart));
-}, [cart]);
 
   const showToast = (msg, color="#1a1a1a") => {
     setToast(msg); setToastColor(color);
@@ -683,7 +799,13 @@ export default function App() {
     toastRef.current = setTimeout(() => setToast(null), 2500);
   };
 
-  const saveAuth = (tok, usr) => { setToken(tok); setUser(usr); localStorage.setItem("tk_token",tok); localStorage.setItem("tk_user",JSON.stringify(usr)); };
+  const saveAuth = (tok, usr) => {
+    setToken(tok); setUser(usr);
+    localStorage.setItem("tk_token", tok);
+    localStorage.setItem("tk_user", JSON.stringify(usr));
+    // Pre-fill delivery form name & phone
+    setDeliveryForm(f => ({...f, name: f.name||usr.name||"", phone: f.phone||usr.phone||""}));
+  };
   const logout = () => { setToken(null); setUser(null); localStorage.removeItem("tk_token"); localStorage.removeItem("tk_user"); setCart({}); setView("home"); showToast("Logged out"); };
 
   const saveLocation = (loc) => {
@@ -691,8 +813,13 @@ export default function App() {
     localStorage.setItem("tk_location", JSON.stringify(loc));
     setShowLocationModal(false);
     showToast("Location saved ✓", G);
-    // Pre-fill delivery form address
-    if (loc.address) setDeliveryForm(f=>({...f, address: [loc.flatNo, loc.address, loc.landmark].filter(Boolean).join(", ")}));
+    setDeliveryForm(f => ({
+      ...f,
+      address: [loc.flatNo, loc.address, loc.landmark].filter(Boolean).join(", "),
+      pincode: loc.pincode || f.pincode,
+      name: f.name || user?.name || "",
+      phone: f.phone || user?.phone || "",
+    }));
   };
 
   const fetchProducts = useCallback(async () => {
@@ -729,6 +856,52 @@ export default function App() {
       setAdminOrders(od.orders||[]); setAdminStats(sd.stats||null);
     } catch(e) { showToast(e.message,"#e53935"); } finally { setLoading(false); }
   }, [token, user]);
+
+  // Poll for new orders every 30s when admin panel is open — alert on new ones
+  const lastOrderCountRef = useRef(null);
+  useEffect(() => {
+    if (!adminMode || user?.role !== "admin") return;
+    // Request notification permission
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+    const poll = async () => {
+      try {
+        const od = await apiFetch("/orders/admin/all", {}, token);
+        const orders = od.orders || [];
+        const newCount = orders.length;
+        if (lastOrderCountRef.current !== null && newCount > lastOrderCountRef.current) {
+          const newest = orders[0];
+          // Browser notification
+          if ("Notification" in window && Notification.permission === "granted") {
+            new Notification("🛒 New Trinkit Order!", {
+              body: `${newest.customer?.name || "Customer"} placed an order — ₹${newest.pricing?.total}`,
+              icon: "/favicon.ico",
+            });
+          }
+          // In-app alert
+          showToast(`🔔 New order from ${newest.customer?.name || "Customer"}!`, "#1a8c4e");
+          // Play a sound
+          try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.frequency.setValueAtTime(880, ctx.currentTime);
+            osc.frequency.setValueAtTime(660, ctx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.3, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+            osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.4);
+          } catch {}
+          setAdminOrders(orders);
+          setAdminStats(sd => sd ? {...sd, totalOrders: newCount} : sd);
+        }
+        lastOrderCountRef.current = newCount;
+      } catch {}
+    };
+    const interval = setInterval(poll, 30000);
+    return () => clearInterval(interval);
+  }, [adminMode, token, user]);
   useEffect(() => { if (adminMode && adminTab==="orders") fetchAdminData(); }, [adminMode, adminTab, fetchAdminData]);
 
   const cartCount = Object.values(cart).reduce((a,b)=>a+b,0);
@@ -740,11 +913,20 @@ export default function App() {
   const handleAuth = async () => {
     setLoading(true);
     try {
-      const endpoint = authView==="login"?"/auth/login":"/auth/register";
-      const body = authView==="login" ? {phone:authForm.phone,password:authForm.password} : {name:authForm.name,phone:authForm.phone,password:authForm.password,...(authForm.adminSecret?{adminSecret:authForm.adminSecret}:{})};
-      const data = await apiFetch(endpoint,{method:"POST",body:JSON.stringify(body)});
-      saveAuth(data.token,data.user);
-      showToast(`Welcome, ${data.user.name}! 👋`,G);
+      const endpoint = authView==="login" ? "/auth/login" : "/auth/register";
+      const body = authView==="login"
+        ? {phone:authForm.phone, password:authForm.password}
+        : {name:authForm.name, phone:authForm.phone, password:authForm.password, ...(authForm.adminSecret?{adminSecret:authForm.adminSecret}:{})};
+      const data = await apiFetch(endpoint, {method:"POST", body:JSON.stringify(body)});
+      // If logging in with admin secret but account is customer role, upgrade it
+      if (authView==="login" && authForm.adminSecret && data.user.role !== "admin") {
+        try {
+          const upgraded = await apiFetch("/auth/make-admin", {method:"POST", body:JSON.stringify({adminSecret:authForm.adminSecret})}, data.token);
+          data.user = upgraded.user;
+        } catch(e) { showToast("Invalid admin secret","#e53935"); setLoading(false); return; }
+      }
+      saveAuth(data.token, data.user);
+      showToast(`Welcome, ${data.user.name}! 👋`, G);
       setView("home");
     } catch(e) { showToast(e.message,"#e53935"); } finally { setLoading(false); }
   };
@@ -805,6 +987,9 @@ export default function App() {
         <span style={{fontWeight:800,fontSize:18,color:"#fff"}}>⚙️ Trinkit Admin</span>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <span style={{background:G,color:"#fff",fontSize:10,padding:"3px 8px",borderRadius:6,fontWeight:700}}>ADMIN</span>
+          {"Notification" in window && Notification.permission !== "granted" && (
+            <button onClick={()=>Notification.requestPermission()} style={{background:"#f57a00",color:"#fff",border:"none",padding:"4px 8px",borderRadius:6,fontSize:10,cursor:"pointer",fontWeight:700}}>🔔 Enable Alerts</button>
+          )}
           <button onClick={()=>setAdminMode(false)} style={{background:"#333",color:"#fff",border:"none",padding:"5px 12px",borderRadius:6,fontSize:12,cursor:"pointer",fontWeight:600}}>← Exit</button>
         </div>
       </div>
@@ -843,9 +1028,12 @@ export default function App() {
               <div style={{fontSize:12,color:"#444",marginBottom:8,borderTop:"1px solid #f0ece4",paddingTop:8}}>{o.items.map(i=>`${i.name} ×${i.qty}`).join(" • ")}</div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontWeight:800,color:G,fontSize:15}}>₹{o.pricing?.total}</span>
-                <select value={o.status} onChange={e=>updateOrderStatus(o._id,e.target.value)} style={{border:"1.5px solid #e4e0d8",borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:700,cursor:"pointer",background:"#fff",outline:"none"}}>
-                  {["pending","confirmed","out","delivered","cancelled"].map(st=><option key={st} value={st}>{STATUS_LABELS[st]}</option>)}
-                </select>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <button onClick={()=>setRiderMapOrder(o)} style={{background:"#e3f0ff",color:"#1565c0",border:"none",padding:"5px 10px",borderRadius:7,fontWeight:700,fontSize:12,cursor:"pointer"}}>📍 Map</button>
+                  <select value={o.status} onChange={e=>updateOrderStatus(o._id,e.target.value)} style={{border:"1.5px solid #e4e0d8",borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:700,cursor:"pointer",background:"#fff",outline:"none"}}>
+                    {["pending","confirmed","out","delivered","cancelled"].map(st=><option key={st} value={st}>{STATUS_LABELS[st]}</option>)}
+                  </select>
+                </div>
               </div>
             </div>
           ))
@@ -890,6 +1078,7 @@ export default function App() {
       </div>
       {showProductModal&&<ProductModal product={editingProduct} token={token} onClose={()=>{setShowProductModal(false);setEditingProduct(null);}} onSaved={onProductSaved} showToast={showToast}/>}
       {confirmDelete&&<ConfirmDialog message={`Delete "${confirmDelete.name}"?`} onConfirm={()=>deleteProduct(confirmDelete._id)} onCancel={()=>setConfirmDelete(null)}/>}
+      {riderMapOrder&&<RiderMapModal order={riderMapOrder} onClose={()=>setRiderMapOrder(null)}/>}
       {toast&&<div style={s.toast(toastColor)}>{toast}</div>}
     </div>
   );
@@ -912,6 +1101,7 @@ export default function App() {
         <div style={s.formGroup}><label style={s.formLabel}>Phone Number</label><input style={s.formInput} placeholder="9876543210" type="tel" value={authForm.phone} onChange={e=>setAuthForm(f=>({...f,phone:e.target.value}))}/></div>
         <div style={s.formGroup}><label style={s.formLabel}>Password</label><input style={s.formInput} placeholder="Min 6 characters" type="password" value={authForm.password} onChange={e=>setAuthForm(f=>({...f,password:e.target.value}))}/></div>
         {authView==="register"&&<div style={s.formGroup}><label style={s.formLabel}>Admin Secret (optional)</label><input style={s.formInput} placeholder="Leave blank for customer account" value={authForm.adminSecret} onChange={e=>setAuthForm(f=>({...f,adminSecret:e.target.value}))}/></div>}
+        {authView==="login"&&<div style={s.formGroup}><label style={s.formLabel}>Admin Secret (optional)</label><input style={s.formInput} placeholder="Only if you are the admin" value={authForm.adminSecret} onChange={e=>setAuthForm(f=>({...f,adminSecret:e.target.value}))}/></div>}
         <button style={s.primaryBtn} onClick={handleAuth} disabled={loading}>{loading?"Please wait...":authView==="login"?"Login":"Create Account"}</button>
         <div style={{textAlign:"center",marginTop:16,fontSize:13,color:"#6b6660"}}>
           {authView==="login"?"New here? ":"Already have an account? "}
