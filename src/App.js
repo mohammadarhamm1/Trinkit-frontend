@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 // ─── CONFIG ────────────────────────────────────────────────────────────────
 // ← Replace with your actual Render backend URL
 const API = "https://trinkit.onrender.com/api";
-const BASE = "https://trinkit.onrender.com";
+const BASE = "https://trinkit.onrender.com/uploads/your-image.jpg";
 
 const UPI_ID = "9149170611@ptsbi";
 const UPI_NAME = "Trinkit Store";
