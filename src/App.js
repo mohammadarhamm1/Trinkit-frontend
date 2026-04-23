@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 const API = "https://trinkit.onrender.com/api";
 const BASE = "https://trinkit.onrender.com";
 
-const UPI_ID = "9149170611@ptsbis";
+const UPI_ID = "9149170611@ptsbi";
 const UPI_NAME = "Trinkit Store";
 
 const apiFetch = async (path, options = {}, token = null) => {
@@ -753,7 +753,10 @@ export default function App() {
   const [view, setView] = useState("home");
   const [adminMode, setAdminMode] = useState(false);
   const [adminTab, setAdminTab] = useState("orders");
-  const [cart, setCart] = useState({});
+  const [cart, setCart] = useState(() => {
+  const savedCart = localStorage.getItem("cart");
+  return savedCart ? JSON.parse(savedCart) : {};
+});
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [adminOrders, setAdminOrders] = useState([]);
@@ -792,6 +795,10 @@ export default function App() {
   const [productSearch, setProductSearch] = useState("");
   const [riderMapOrder, setRiderMapOrder] = useState(null);
   const toastRef = useRef();
+
+  useEffect(() => {
+  localStorage.setItem("cart", JSON.stringify(cart));
+}, [cart]);
 
   const showToast = (msg, color="#1a1a1a") => {
     setToast(msg); setToastColor(color);
