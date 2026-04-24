@@ -710,8 +710,25 @@ function RiderMapModal({ order, onClose }) {
         });
       }
       const L = window.L;
-      const lat = coords?.lat || 28.6139;  // Delhi fallback (not Meerut)
-      const lng = coords?.lng || 77.2090;
+
+      // Use pinned coords if available, otherwise geocode the address string
+      let lat = coords?.lat;
+      let lng = coords?.lng;
+      if (!lat || !lng) {
+        try {
+          const query = [flatNo, address].filter(Boolean).join(", ");
+          const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`);
+          const data = await res.json();
+          if (data && data[0]) { lat = parseFloat(data[0].lat); lng = parseFloat(data[0].lon); }
+        } catch {}
+      }
+
+      // If still no coords, show a helpful error instead of wrong city
+      if (!lat || !lng) {
+        if (mapRef.current) mapRef.current.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:10px;color:#6b6660;padding:24px;text-align:center"><div style="font-size:40px">📍</div><div style="font-weight:700;font-size:15px;color:#e53935">Exact location not available</div><div style="font-size:13px">Customer did not pin location on map.<br/>Use the address below to navigate.</div></div>`;
+        return;
+      }
+
       if (mapInstanceRef.current) { mapInstanceRef.current.remove(); }
       setTimeout(() => {
         if (!mapRef.current) return;
@@ -720,7 +737,6 @@ function RiderMapModal({ order, onClose }) {
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: "© OpenStreetMap"
         }).addTo(map);
-        // Customer pin
         const icon = L.divIcon({
           html: `<div style="background:#e53935;width:36px;height:36px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;"></div>`,
           iconSize:[36,36], iconAnchor:[18,36], className:""
@@ -980,7 +996,8 @@ export default function App() {
     setLoading(true);
     try {
       const items = Object.entries(cart).map(([productId,qty])=>({productId,qty}));
-      await apiFetch("/orders",{method:"POST",body:JSON.stringify({items,deliveryAddress:deliveryForm,paymentMethod:"cod"})},token);
+      const deliveryAddress = { ...deliveryForm, coords: location?.coords || null, flatNo: location?.flatNo || "", landmark: location?.landmark || "" };
+      await apiFetch("/orders",{method:"POST",body:JSON.stringify({items,deliveryAddress,paymentMethod:"cod"})},token);
       setCart({}); setCheckoutStep("success");
     } catch(e) { showToast(e.message,"#e53935"); } finally { setLoading(false); }
   };
@@ -989,7 +1006,8 @@ export default function App() {
     setLoading(true);
     try {
       const items = Object.entries(cart).map(([productId,qty])=>({productId,qty}));
-      await apiFetch("/orders",{method:"POST",body:JSON.stringify({items,deliveryAddress:deliveryForm,paymentMethod:"online"})},token);
+      const deliveryAddress = { ...deliveryForm, coords: location?.coords || null, flatNo: location?.flatNo || "", landmark: location?.landmark || "" };
+      await apiFetch("/orders",{method:"POST",body:JSON.stringify({items,deliveryAddress,paymentMethod:"online"})},token);
       setCart({}); setShowUpiModal(false); setCheckoutStep("success");
     } catch(e) { showToast(e.message,"#e53935"); } finally { setLoading(false); }
   };
