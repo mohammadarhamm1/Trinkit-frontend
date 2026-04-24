@@ -3,9 +3,19 @@ import { useState, useEffect, useRef, useCallback } from "react";
 // ─── CONFIG ────────────────────────────────────────────────────────────────
 // ← Replace with your actual Render backend URL
 const API = "https://trinkit.onrender.com/api";
-const BASE = "https://trinkit.onrender.com/uploads/your-image.jpg";
+const BASE = "https://trinkit.onrender.com";
 
-const UPI_ID = "9149170611@ptsbi";
+// Smart image URL — fixes old localhost URLs stored in DB
+const imgUrl = (url) => {
+  if (!url) return null;
+  if (url.startsWith("http://localhost") || url.startsWith("https://localhost")) {
+    return BASE + url.replace(/^https?:\/\/localhost:\d+/, "");
+  }
+  if (url.startsWith("http")) return url;
+  return BASE + url;
+};
+
+const UPI_ID = "9258154802@axl";
 const UPI_NAME = "Trinkit Store";
 
 const apiFetch = async (path, options = {}, token = null) => {
@@ -111,7 +121,15 @@ function LocationModal({ onSave, onClose, currentLocation }) {
 
   const useGPS = () => {
     setLocating(true); setError("");
-    if (!navigator.geolocation) { setError("GPS not available on this device."); setLocating(false); return; }
+    if (!navigator.geolocation) {
+      setError("GPS not supported on this browser. Please use Chrome or Firefox.");
+      setLocating(false); return;
+    }
+    // Check if we're on HTTPS — GPS requires HTTPS on mobile
+    if (location.protocol !== "https:" && location.hostname !== "localhost") {
+      setError("GPS requires HTTPS. Your site must be accessed via https://");
+      setLocating(false); return;
+    }
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const { latitude: lat, longitude: lng } = pos.coords;
@@ -122,26 +140,27 @@ function LocationModal({ onSave, onClose, currentLocation }) {
         setStep("confirm");
       },
       (err) => {
-        setError("Could not get location. Please allow location access or enter manually.");
+        let msg = "Could not get location. ";
+        if (err.code === 1) msg += "Please allow location access in your browser settings, then try again.";
+        else if (err.code === 2) msg += "GPS signal not available. Try moving outdoors or use 'Pick on map'.";
+        else if (err.code === 3) msg += "Location request timed out. Try 'Pick on map' instead.";
+        setError(msg);
         setLocating(false);
       },
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   };
 
-  // Load Leaflet map
+  // Load Leaflet map — centers on real GPS if available
   useEffect(() => {
     if (step !== "map") return;
     const initMap = async () => {
-      // Load leaflet CSS
       if (!document.getElementById("leaflet-css")) {
         const link = document.createElement("link");
-        link.id = "leaflet-css";
-        link.rel = "stylesheet";
+        link.id = "leaflet-css"; link.rel = "stylesheet";
         link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
         document.head.appendChild(link);
       }
-      // Load leaflet JS
       if (!window.L) {
         await new Promise((res, rej) => {
           const script = document.createElement("script");
@@ -151,11 +170,24 @@ function LocationModal({ onSave, onClose, currentLocation }) {
         });
       }
       const L = window.L;
-      const defaultCoords = coords || { lat: 28.9845, lng: 77.7064 }; // Meerut default
+
+      // Try to get real GPS location to center the map
+      const getStartCoords = () => new Promise((resolve) => {
+        if (coords) { resolve(coords); return; }
+        if (!navigator.geolocation) { resolve({ lat: 28.6139, lng: 77.2090 }); return; } // Delhi fallback
+        navigator.geolocation.getCurrentPosition(
+          pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+          () => resolve({ lat: 28.6139, lng: 77.2090 }), // Delhi fallback if GPS fails
+          { enableHighAccuracy: true, timeout: 8000 }
+        );
+      });
+
+      const startCoords = await getStartCoords();
+
       if (mapInstanceRef.current) { mapInstanceRef.current.remove(); }
       setTimeout(() => {
         if (!mapRef.current) return;
-        const map = L.map(mapRef.current).setView([defaultCoords.lat, defaultCoords.lng], 16);
+        const map = L.map(mapRef.current).setView([startCoords.lat, startCoords.lng], 17);
         mapInstanceRef.current = map;
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: "© OpenStreetMap contributors"
@@ -164,8 +196,15 @@ function LocationModal({ onSave, onClose, currentLocation }) {
           html: `<div style="width:32px;height:32px;background:${G};border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.4)"></div>`,
           iconSize:[32,32], iconAnchor:[16,32], className:""
         });
-        const marker = L.marker([defaultCoords.lat, defaultCoords.lng], { icon, draggable: true }).addTo(map);
+        const marker = L.marker([startCoords.lat, startCoords.lng], { icon, draggable: true }).addTo(map);
         markerRef.current = marker;
+        // Set initial address if we got GPS
+        if (!coords) {
+          reverseGeocode(startCoords.lat, startCoords.lng).then(addr => {
+            setCoords(startCoords);
+            setAddress(addr);
+          });
+        }
         marker.on("dragend", async (e) => {
           const { lat, lng } = e.target.getLatLng();
           const addr = await reverseGeocode(lat, lng);
@@ -204,18 +243,17 @@ function LocationModal({ onSave, onClose, currentLocation }) {
             {/* GPS option */}
             <button onClick={useGPS} disabled={locating} style={{width:"100%",border:`1.5px solid ${G}`,background:GL,borderRadius:14,padding:16,display:"flex",alignItems:"center",gap:14,cursor:"pointer",marginBottom:12,textAlign:"left"}}>
               <div style={{fontSize:32}}>📍</div>
-              <div>
-                <div style={{fontWeight:700,fontSize:15,color:G}}>{locating?"Detecting location...":"Use my current location"}</div>
-                <div style={{fontSize:12,color:"#6b6660",marginTop:2}}>Uses GPS for most accurate delivery</div>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:700,fontSize:15,color:G}}>{locating?"Detecting your location...":"Use my current location"}</div>
+                <div style={{fontSize:12,color:"#6b6660",marginTop:2}}>Most accurate • Requires location permission</div>
               </div>
-              {locating&&<div style={{marginLeft:"auto",fontSize:18}}>⏳</div>}
+              {locating && <div style={{marginLeft:"auto",fontSize:18}}>⏳</div>}
             </button>
-            {/* Map option */}
             <button onClick={()=>setStep("map")} style={{width:"100%",border:"1.5px solid #e4e0d8",background:"#fff",borderRadius:14,padding:16,display:"flex",alignItems:"center",gap:14,cursor:"pointer",marginBottom:12,textAlign:"left"}}>
               <div style={{fontSize:32}}>🗺️</div>
               <div>
                 <div style={{fontWeight:700,fontSize:15}}>Pick on map</div>
-                <div style={{fontSize:12,color:"#6b6660",marginTop:2}}>Drag pin to your exact location</div>
+                <div style={{fontSize:12,color:"#6b6660",marginTop:2}}>Opens map centered on your location — drag pin to exact spot</div>
               </div>
             </button>
             {/* Manual option */}
@@ -382,7 +420,7 @@ function ProductModal({ product, token, onClose, onSaved, showToast }) {
   const [form, setForm] = useState(product ? {...product, price:String(product.price), mrp:String(product.mrp||""), stock:String(product.stock)} : {...BLANK_PRODUCT});
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [imagePreview, setImagePreview] = useState(product?.image ? (product.image.startsWith("http")?product.image:`${BASE}${product.image}`) : null);
+  const [imagePreview, setImagePreview] = useState(product?.image ? (imgUrl(product.image)) : null);
   const fileRef = useRef();
   const isEdit = !!product?._id;
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
@@ -578,7 +616,7 @@ function CartView({ checkoutStep, setCheckoutStep, paymentMethod, setPaymentMeth
           {cartItems.map(item=>(
             <div key={item._id} style={s.cartItem}>
               <div style={{width:52,height:52,borderRadius:10,overflow:"hidden",flexShrink:0,background:"#f9f8f5",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                {item.image?<img src={item.image.startsWith("http")?item.image:`${BASE}${item.image}`} alt={item.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:26}}>{item.emoji||"🛒"}</span>}
+                {item.image?<img src={imgUrl(item.image)} alt={item.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:26}}>{item.emoji||"🛒"}</span>}
               </div>
               <div style={{flex:1}}>
                 <div style={{fontWeight:600,fontSize:13,marginBottom:2}}>{item.name}</div>
@@ -672,8 +710,8 @@ function RiderMapModal({ order, onClose }) {
         });
       }
       const L = window.L;
-      const lat = coords?.lat || 28.9845;
-      const lng = coords?.lng || 77.7064;
+      const lat = coords?.lat || 28.6139;  // Delhi fallback (not Meerut)
+      const lng = coords?.lng || 77.2090;
       if (mapInstanceRef.current) { mapInstanceRef.current.remove(); }
       setTimeout(() => {
         if (!mapRef.current) return;
@@ -994,9 +1032,14 @@ export default function App() {
         <span style={{fontWeight:800,fontSize:18,color:"#fff"}}>⚙️ Trinkit Admin</span>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <span style={{background:G,color:"#fff",fontSize:10,padding:"3px 8px",borderRadius:6,fontWeight:700}}>ADMIN</span>
-          {"Notification" in window && Notification.permission !== "granted" && (
-            <button onClick={()=>Notification.requestPermission()} style={{background:"#f57a00",color:"#fff",border:"none",padding:"4px 8px",borderRadius:6,fontSize:10,cursor:"pointer",fontWeight:700}}>🔔 Enable Alerts</button>
-          )}
+          <button onClick={()=>{
+            if (!("Notification" in window)) { alert("Notifications not supported on this browser. Use Chrome."); return; }
+            if (Notification.permission === "granted") { showToast("Notifications already enabled ✓", G); return; }
+            if (Notification.permission === "denied") { alert("Notifications blocked. Go to browser Settings → Site Settings → Notifications → allow this site."); return; }
+            Notification.requestPermission().then(p => { if(p==="granted") showToast("🔔 Order alerts enabled!", G); });
+          }} style={{background: ("Notification" in window && Notification.permission==="granted") ? G : "#f57a00", color:"#fff", border:"none", padding:"5px 10px", borderRadius:6, fontSize:11, cursor:"pointer", fontWeight:700}}>
+            {("Notification" in window && Notification.permission==="granted") ? "🔔 Alerts ON" : "🔔 Enable Alerts"}
+          </button>
           <button onClick={()=>setAdminMode(false)} style={{background:"#333",color:"#fff",border:"none",padding:"5px 12px",borderRadius:6,fontSize:12,cursor:"pointer",fontWeight:600}}>← Exit</button>
         </div>
       </div>
@@ -1057,7 +1100,7 @@ export default function App() {
                 <div key={p._id} style={{...s.adminCard,opacity:p.isAvailable?1:.6}}>
                   <div style={{display:"flex",alignItems:"center",gap:12}}>
                     <div style={{width:56,height:56,borderRadius:10,overflow:"hidden",flexShrink:0,background:"#f9f8f5",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                      {p.image?<img src={p.image.startsWith("http")?p.image:`${BASE}${p.image}`} alt={p.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:28}}>{p.emoji||"🛒"}</span>}
+                      {p.image?<img src={imgUrl(p.image)} alt={p.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:28}}>{p.emoji||"🛒"}</span>}
                     </div>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontWeight:700,fontSize:14,marginBottom:2}}>{p.name}</div>
@@ -1197,7 +1240,7 @@ export default function App() {
               {products.length===0?<div style={{gridColumn:"1/-1",textAlign:"center",padding:32,color:"#6b6660"}}><div style={{fontSize:36,marginBottom:8}}>😕</div><p>No products found</p></div>:
                 products.map(p=>(
                   <div key={p._id} style={s.productCard}>
-                    {p.image?<img src={p.image.startsWith("http")?p.image:`${BASE}${p.image}`} alt={p.name} style={{width:"100%",height:110,objectFit:"cover",display:"block"}} onError={e=>{e.target.style.display="none";e.target.nextSibling.style.display="flex";}}/>:null}
+                    {p.image?<img src={imgUrl(p.image)} alt={p.name} style={{width:"100%",height:110,objectFit:"cover",display:"block"}} onError={e=>{e.target.style.display="none";e.target.nextSibling.style.display="flex";}}/>:null}
                     <div style={{...s.productImgFallback,display:p.image?"none":"flex"}}>{p.emoji||"🛒"}</div>
                     <div style={s.productInfo}>
                       <div style={{fontSize:13,fontWeight:600,marginBottom:2,lineHeight:1.3}}>{p.name}</div>
