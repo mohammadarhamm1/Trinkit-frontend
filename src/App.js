@@ -126,7 +126,7 @@ function LocationModal({ onSave, onClose, currentLocation }) {
       setLocating(false); return;
     }
     // Check if we're on HTTPS — GPS requires HTTPS on mobile
-    if (location.protocol !== "https:" && location.hostname !== "localhost") {
+    if (window.location.protocol !== "https:" && window.location.hostname !== "localhost") {
       setError("GPS requires HTTPS. Your site must be accessed via https://");
       setLocating(false); return;
     }
